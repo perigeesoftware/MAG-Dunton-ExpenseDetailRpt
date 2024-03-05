@@ -78,9 +78,9 @@ from 	Property p
 	Left outer join intcurrency_info cur on cur.hmy = o.hcurrency
 where 1=1 
 	and pc.irecoveryeoymonth > 0
-	and case isnull(cpep.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cpep.iRecoveryEOYMonth end = datepart(mm, (#yearend#))
-		and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1, (#yearend#))))
-	and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy , (#yearend#))
+	and case isnull(cpep.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cpep.iRecoveryEOYMonth end = datepart(mm, ('#yearend#'))
+		and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1, ('#yearend#'))))
+	and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy , ('#yearend#'))
 	#conditions#
 //End Select
 	
@@ -115,9 +115,9 @@ from 	Property p
 	Left Outer join commrecoverygroup recgp on (recgp.hmy = rc.hrecoverygroup)
 where 1=1 
 	and pc.irecoveryeoymonth > 0
-	and case isnull(cpep.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cpep.iRecoveryEOYMonth end = datepart(mm,(#yearend#))
-		and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1,(#yearend#))))
-	and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy,(#yearend#))
+	and case isnull(cpep.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cpep.iRecoveryEOYMonth end = datepart(mm,('#yearend#'))
+		and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1,('#yearend#'))))
+	and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy,('#yearend#'))
 	#conditions#
 //end select
 
@@ -176,7 +176,7 @@ from
 			 Inner Join total t 	       on p.hMy = t.hppty  	 	   	        
 			 where 1=1              
 			 #Condition1#       	 	        
-			 and t.uMonth between dateadd(mm,-11,(#yearend#)) and dateadd(dd,-1,(dateadd(mm,1,(#yearend#))))
+			 and t.uMonth between dateadd(mm,-11,('#yearend#')) and dateadd(dd,-1,(dateadd(mm,1,('#yearend#'))))
 			 and t.iBook = case '#books#' when 'cash' then 0 else 1 end  		            
 			 UNION ALL                     
 			 Select  		
@@ -192,21 +192,38 @@ from
 			 left outer Join Commdenominator cd	on cd.hmy = ce.hDenominator  		   	        
 			 where 1=1               
 			 #Condition1#
-			 and ce.dtadjustment between dateadd(mm,-11,(#yearend#)) and dateadd(dd,-1,(dateadd(mm,1,(#yearend#))))
+			 and ce.dtadjustment between dateadd(mm,-11,('#yearend#')) and dateadd(dd,-1,(dateadd(mm,1,('#yearend#'))))
 			) tot on tot.phmy = p.hmy and tot.accthmy = a.hmy and tot.exphmy = case tot.exphmy when 0 then tot.exphmy else cep.hmy end 
+
+	/* Added 02/28/24 */
+	LEFT OUTER JOIN (
+		select cr.hRecoveryGroup * 1000000  + cr.hExpensePool as RecExpID, cr.hExpensePool, cr.hRecoveryGroup
+  			, re.hmy, re.hCamRule, re.hAcct, re.hPropExpensePool, a.scode, a.sdesc, cr.hAmendment, cr.htenant
+		from commrecoveryexclude re
+		inner join acct a on re.hacct = a.hmy
+		inner join camrule cr on re.hCamRule = cr.hmy
+		inner join commamendments ca on cr.htenant = ca.htenant and cr.hamendment = ca.hmy 
+			and ISNULL(ca.dtStart,'2000-01-01') <= '#yearend#' and ISNULL(ca.dtEnd, '2199-12-31') >= '#yearend#'
+		inner join commrecoverygroup crg on cr.hRecoveryGroup = crg.hmy
+		--where cr.htenant = 14693 and cr.hExpensePool in (1188,1206) and cr.hRecoveryGroup in (3,4)
+	) AcctExc on acctexc.RecExpID = recgroup.RecGrpID * 1000000 + cep.hmy and acctexc.htenant = t.hmyperson and acctexc.hacct = a.hmy
+
 	where 1=1   
 	#Condition1#
 	#Condition2#
+	and acctexc.RecExpID is null   /* Added 2/28/24 */
 	and  tot.Exp <> 0 
-	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(#yearend#))
-	and exists ( select 1 from camrule cr where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
+	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,('#yearend#'))
+	and exists ( select 1 from camrule cr inner join commamendments ca on cr.hamendment = ca.hmy 
+		and ISNULL(ca.dtStart,'2000-01-01') <= '#yearend#' and isnull(ca.dtEnd,'2199-12-31') >= '#yearend#' 
+		where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
 	and not exists ( select 1 from commrecoveryexclude re where re.hacct = a.hmy and re.hPropexpensepool = cp.hmy) 
-	and not exists ( select 1 from commrecoveryexclude re inner join commrecovery cr  on cr.hmy = re.hRecovery 
+/*	and not exists ( select 1 from commrecoveryexclude re inner join commrecovery cr  on cr.hmy = re.hRecovery 
 		inner join commrecoverygroupdet gd on gd.hmy = cr.hgroupdet where re.hacct = a.hmy and cr.hexpensepool = cep.hmy and gd.hprop = p.hmy  
 		and re.hmy in (select re.hmy from commrecoveryexclude re inner join camrule cr on cr.hmy = re.hCamrule 
 		inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
-		and ISNULL(ca.dtStart,'2000-01-01') <= '#yearend#' and ISNULL(ca.dtEnd,'2199-12-31') >= '#yearend#' /* ADDED 02/28/24 */
-		where re.hacct = a.hmy and cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson))
+		and ISNULL(ca.dtStart,'2000-01-01') <= '#yearend#' and ISNULL(ca.dtEnd,'2199-12-31') >= '#yearend#' 
+		where re.hacct = a.hmy and cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)) */ 
 	and not exists ( select 1 from commrecoveryexclude re inner join camrule cr  on cr.hmy = re.hCamrule 
 		inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
 		and ISNULL(ca.dtStart,'2000-01-01') <= '#yearend#' and ISNULL(ca.dtEnd,'2199-12-31') >= '#yearend#' /*Added 2/28/24*/	
@@ -230,8 +247,8 @@ Select   '2' ord, p.hmy                 			        phmy
 	,AdjTotal.ExpOp						ExpOp
 	,AdjTotal.GrossUp 				GrossUp
 	,AdjTotal.RecoveryFactor			RecoveryFactor
-	,case when (t.dtleasefrom > dateadd(mm,-11,(#yearend#)) and t.dtleasefrom  < dateadd(dd,-1,(dateadd(mm,1,(#yearend#))))) or
-		    (t.dtleaseto > dateadd(mm,-11,(#yearend#)) and t.dtleaseto < dateadd(dd,-1,(dateadd(mm,1,(#yearend#))))) 		    
+	,case when (t.dtleasefrom > dateadd(mm,-11,('#yearend#')) and t.dtleasefrom  < dateadd(dd,-1,(dateadd(mm,1,('#yearend#'))))) or
+		    (t.dtleaseto > dateadd(mm,-11,('#yearend#')) and t.dtleaseto < dateadd(dd,-1,(dateadd(mm,1,('#yearend#'))))) 		    
 	      then 1 
 	      else 0 end  PartialYear
 	from Property p  
@@ -278,15 +295,15 @@ Select   '2' ord, p.hmy                 			        phmy
 				where 1=1   
 			#Condition1#
 			#Condition2#
-			and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(#yearend#))
-				and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1,(#yearend#))))
-	and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy,(#yearend#))
+			and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,('#yearend#'))
+				and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1,('#yearend#'))))
+	and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy,('#yearend#'))
 			group by p.hmy,t.scode,t.hmyperson,cep.hmy,rc.cexpensegrossup,rc.cexpenserecoveryfactor
 		)AdjTotal on AdjTotal.phmy = p.hmy and AdjTotal.thmy = t.hmyperson and AdjTotal.exppoolid = cep.hmy
 	where 1=1   
 	#Condition1#
 	#Condition2#
-	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(#yearend#))
+	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,('#yearend#'))
 	and exists ( select 1 from camrule cr where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
 	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,AdjTotal.ExpOp, AdjTotal.GrossUp, AdjTotal.RecoveryFactor, t.dtleasefrom , t.dtleaseto
 )a
