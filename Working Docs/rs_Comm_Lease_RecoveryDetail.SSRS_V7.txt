@@ -140,7 +140,6 @@ from
 	,ltrim(rtrim(cep.scode)) 			        ExpPoolCode  
 	,ltrim(rtrim(cep.sdesc)) 			        ExpDesc
 	,ltrim(rtrim(a.hChart)) 			        ChartId  
-	,convert(nvarchar(100),a.hmy)				hAcct
 	,ltrim(rtrim(a.scode)) 			        	AcctCode  
 	,ltrim(rtrim(a.sdesc)) 			        	adesc 
   ,isnull(sum(case tot.thmy when 0 then isnull(tot.exp,0) else case tot.thmy when t.hmyperson then isnull(tot.exp,0) else 0 end end ) ,0) 		TotExp  
@@ -238,7 +237,7 @@ from
 			OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
 			OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 		where re.hacct = a.hmy and re.hpropexpensepool = cep.hmy and cr.htenant = t.hmyperson) 
-	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,a.hchart,a.hmy,a.scode,a.sdesc
+	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,a.hchart,a.scode,a.sdesc
 	
 	union all
 	
@@ -251,7 +250,6 @@ Select   '2' ord, p.hmy                 			        phmy
 	,ltrim(rtrim(cep.scode)) 			        ExpPoolCode  
 	,ltrim(rtrim(cep.sdesc)) 			        ExpDesc  
 	,'' 			        			ChartId  
-	,''							hAcct
 	,'' 					        	AcctCode  
 	,''		 			        	adesc 
 	,0			                 		TotExp  
