@@ -159,6 +159,22 @@ End function
     <ReportItems>
       <Table Name="table1">
         <DataSetName>rx_Comm_Lease_RecoveryDetail_DetailByPool</DataSetName>
+       <Filters>
+          <Filter>
+            <FilterExpression>=Fields!pcode.Value</FilterExpression>
+            <Operator>Equal</Operator>
+            <FilterValues>
+              <FilterValue>=trim(Parameters!pscode.Value)</FilterValue>
+            </FilterValues>
+          </Filter>
+          <Filter>
+            <FilterExpression>=Fields!tscode.Value</FilterExpression>
+            <Operator>Equal</Operator>
+            <FilterValues>
+              <FilterValue>=trim(Parameters!tcode.Value)</FilterValue>
+            </FilterValues>
+          </Filter>
+        </Filters>
         <TableGroups>
           <TableGroup>
             <Grouping Name="table1_Group1">
