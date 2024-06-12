@@ -168,6 +168,7 @@ from
 							/* ADDED 2/28/24 */
 							inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
 							inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
+							/* ADDED 06/04/24  and ca.iStatus = 1 */
                       						AND ((ISNULL(ca.dtStart,'2000-01-01') <= @EndDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
 								OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
 								OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
@@ -215,6 +216,12 @@ from
 		inner join acct a on re.hacct = a.hmy
 		inner join camrule cr on re.hCamRule = cr.hmy
 		inner join commamendments ca on cr.htenant = ca.htenant and cr.hamendment = ca.hmy 
+		/* Block below 06/04/24 */ 
+		and ca.isequence = (select max(ccc.isequence) from commamendments ccc where ca.htenant = ccc.htenant and ccc.istatus in (1,2)
+                        AND ((ISNULL(ccc.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @EndDt)
+			OR (ISNULL(ccc.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @BegDt)
+    			OR (ISNULL(ccc.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') <= @EndDt)))  
+		/* Block above 06/04/24 */ 
 			AND ((ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
 			OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
     			OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
@@ -227,13 +234,14 @@ from
 	where 1=1   
 	#Condition1#
 	#Condition2#
-	and acctexc.RecExpID is null   /* Added 2/28/24 */	
+	and acctexc.RecExpID is null   /* ---- Added 2/28/24 ----  */	
 	and  tot.Exp <> 0 
 	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))
 	and exists ( select 1 from camrule cr where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
 	and not exists ( select 1 from commrecoveryexclude re where re.hacct = a.hmy and re.hPropexpensepool = cp.hmy) 
 	and not exists ( select 1 from commrecoveryexclude re inner join camrule cr  on cr.hmy = re.hCamrule 
 		inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
+			/* ADDED 06/04/24  and ca.iStatus = 1 */
                 	AND ((ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
 			OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
 			OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
@@ -303,6 +311,7 @@ Select   '2' ord, p.hmy                 		        phmy
 				inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
 					/*and cr.dtfrom <= @EndDt and cr.dtto >= @EndDt*/
 				INNER JOIN commamendments ca on rc.htenant = ca.htenant and cr.hamendment = ca.hmy
+				/* ADDED 06/04/24  and ca.iStatus = 1 */
 				AND ((ISNULL(ca.dtStart,'2000-01-01') <= @EndDt 
               				AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt) 
 					OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt) 

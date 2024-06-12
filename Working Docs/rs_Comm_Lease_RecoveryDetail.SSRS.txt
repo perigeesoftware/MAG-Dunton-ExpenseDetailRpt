@@ -227,7 +227,7 @@ from
 	where 1=1   
 	#Condition1#
 	#Condition2#
-	and acctexc.RecExpID is null   /* Added 2/28/24 */	
+	and acctexc.RecExpID is not null   /* Added 2/28/24  ---------------------------------------------     */	
 	and  tot.Exp <> 0 
 	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))
 	and exists ( select 1 from camrule cr where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
