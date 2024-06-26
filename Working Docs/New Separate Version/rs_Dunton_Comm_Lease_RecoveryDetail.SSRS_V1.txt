@@ -1,7 +1,7 @@
 //Vista
 //Notes
   Copyright (c) 2005 by Yardi Systems
-  NAME 	       : rx_Comm_Lease_RecoveryDetail.rdllc
+  NAME 	       : rx_Dunton_Comm_Lease_RecoveryDetail.rdlc  -- DUNTON CUSTOM VERSION
 
   DESCRIPTION  : Recovery Calculation Detail
 	
@@ -26,7 +26,7 @@
 //End Notes
 
 //Database
-SSRS rx_Comm_Lease_RecoveryDetail.rdlc
+SSRS rx_Dunton_Comm_Lease_RecoveryDetail.rdlc
 //End Database
 
 //Crystal
@@ -40,7 +40,7 @@ Commercial Lease Recovery Detail
 //End Title
 
 //Select
-selects  Isnull(o.ucode,'-')			ocode,
+select  Isnull(o.ucode,'-')			ocode,
 	isnull(o.ulastname,'-')			oname,
 	isnull(p.scode,'-')			pscode, 
 	isnull(ltrim(rtrim(p.saddr1)),'-')    	Propname, 
@@ -56,7 +56,8 @@ selects  Isnull(o.ucode,'-')			ocode,
 	pc.iRecoveryEOYMonth			eoyMonth,
 	rc.cBaseAmountActual 			baseamt,
 	rc.dtbaseYearTo 			baseYear,
-	rc.cceilingactual			ceilingamt,
+	/*rc.cceilingactual			ceilingamt, --REMOVED 6/25/24 */
+	CASE WHEN rc.cceilingactual = 0 THEN rc.cCeilingGroup ELSE rc.cceilingactual END ceilingamt,
 	rc.dadminpercent 			mgntfee	,
 	rc.dSharePercent			prorata,
 	rc.dgrossuppercent			grossup,
@@ -168,9 +169,10 @@ from
 							/* ADDED 2/28/24 */
 							inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
 							inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
-                      						AND ((ISNULL(ca.dtStart,'1901-01-01') <= @EndDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
-								OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
-								OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
+							/* ADDED 06/04/24  and ca.iStatus = 1 */
+                      						AND ((ISNULL(ca.dtStart,'1910-01-01') <= @EndDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
+								OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
+								OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 							Where 1=1
 							#Condition2#
 							#Condition3#
@@ -215,9 +217,15 @@ from
 		inner join acct a on re.hacct = a.hmy
 		inner join camrule cr on re.hCamRule = cr.hmy
 		inner join commamendments ca on cr.htenant = ca.htenant and cr.hamendment = ca.hmy 
-			AND ((ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
-			OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
-    			OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
+		/* Block below 06/04/24 */ 
+		and ca.isequence = (select max(ccc.isequence) from commamendments ccc where ca.htenant = ccc.htenant and ccc.istatus in (1,2)
+                        AND ((ISNULL(ccc.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @EndDt)
+			OR (ISNULL(ccc.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @BegDt)
+    			OR (ISNULL(ccc.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') <= @EndDt)))  
+		/* Block above 06/04/24 */ 
+			AND ((ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
+			OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
+    			OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 		inner join commrecoverygroup crg on cr.hRecoveryGroup = crg.hmy
 		/* where cr.htenant = 14693 and cr.hExpensePool in (1188,1206) and cr.hRecoveryGroup in (3,4) */
 	) AcctExc on acctexc.RecExpID = recgroup.RecGrpID * 1000000 + cep.hmy and acctexc.htenant = t.hmyperson and acctexc.hacct = a.hmy
@@ -227,26 +235,27 @@ from
 	where 1=1   
 	#Condition1#
 	#Condition2#
-	and acctexc.RecExpID is null   /* Added 2/28/24  ---------------------------------------------     */	
+	and acctexc.RecExpID is null   /* ---- Added 2/28/24 ----  */	
 	and  tot.Exp <> 0 
 	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))
 	and exists ( select 1 from camrule cr where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
 	and not exists ( select 1 from commrecoveryexclude re where re.hacct = a.hmy and re.hPropexpensepool = cp.hmy) 
 	and not exists ( select 1 from commrecoveryexclude re inner join camrule cr  on cr.hmy = re.hCamrule 
 		inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
-                	AND ((ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
-			OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
-			OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
+			/* ADDED 06/04/24  and ca.iStatus = 1 */
+                	AND ((ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
+			OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
+			OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 		where re.hacct = a.hmy and re.hpropexpensepool = cep.hmy and cr.htenant = t.hmyperson) 
 	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,a.hchart,a.hmy,a.scode,a.sdesc
 	
 	union all
 	
-Select   '2' ord, p.hmy                 			        phmy  
+Select   '2' ord, p.hmy                 		        phmy  
 	,ltrim(rtrim(p.scode))				        pcode  
 	,ltrim(rtrim(p.saddr1))			        	PropertyDesc 
 	,t.hmyperson						thmy
-	,ltrim(rtrim(isnull(t.scode,'')))					tscode
+	,ltrim(rtrim(isnull(t.scode,'')))			tscode
 	,cep.hmy 			                        ExpPoolId  
 	,ltrim(rtrim(cep.scode)) 			        ExpPoolCode  
 	,ltrim(rtrim(cep.sdesc)) 			        ExpDesc  
@@ -255,9 +264,9 @@ Select   '2' ord, p.hmy                 			        phmy
 	,'' 					        	AcctCode  
 	,''		 			        	adesc 
 	,0			                 		TotExp  
-	,AdjTotal.ExpOp						ExpOp
-	,AdjTotal.GrossUp 				GrossUp
-	,AdjTotal.RecoveryFactor			RecoveryFactor
+	,ISNULL(AdjTotal.ExpOp,0)				ExpOp
+	,ISNULL(AdjTotal.GrossUp,0) 				GrossUp
+	,ISNULL(AdjTotal.RecoveryFactor,0)			RecoveryFactor
 	,case when (t.dtleasefrom > @BegDt and t.dtleasefrom  < @EndDt) or
 		    (t.dtleaseto > @BegDt and t.dtleaseto < @EndDt) 		    
 	      then 1 
@@ -279,10 +288,6 @@ Select   '2' ord, p.hmy                 			        phmy
 		inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
 			and ((ISNULL(cr.dtfrom,'2199-12-31') <= @YearEnd and ISNULL(cr.dtto,'2199-12-31') >= @YearEnd)
 			or cr.dtto BETWEEN @BegDt and @YearEnd)
-		inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
-                      						AND ((ISNULL(ca.dtStart,'1901-01-01') <= @EndDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
-								OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
-								OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 		Where 1=1
 		#Condition2#
 		#Condition3#
@@ -307,10 +312,11 @@ Select   '2' ord, p.hmy                 			        phmy
 				inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
 					/*and cr.dtfrom <= @EndDt and cr.dtto >= @EndDt*/
 				INNER JOIN commamendments ca on rc.htenant = ca.htenant and cr.hamendment = ca.hmy
-				AND ((ISNULL(ca.dtStart,'1901-01-01') <= @EndDt 
+				/* ADDED 06/04/24  and ca.iStatus = 1 */
+				AND ((ISNULL(ca.dtStart,'1910-01-01') <= @EndDt 
               				AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt) 
-					OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt) 
-            				OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt)) 
+					OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt) 
+            				OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt)) 
 			where 1=1   
 			#Condition1#
 			#Condition2#

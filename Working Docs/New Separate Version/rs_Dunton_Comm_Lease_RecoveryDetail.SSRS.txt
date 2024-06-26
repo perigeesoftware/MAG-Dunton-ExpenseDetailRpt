@@ -56,7 +56,8 @@ select  Isnull(o.ucode,'-')			ocode,
 	pc.iRecoveryEOYMonth			eoyMonth,
 	rc.cBaseAmountActual 			baseamt,
 	rc.dtbaseYearTo 			baseYear,
-	rc.cceilingactual			ceilingamt,
+	/*rc.cceilingactual			ceilingamt, --REMOVED 6/25/24 */
+	CASE WHEN rc.cceilingactual = 0 THEN rc.cCeilingGroup ELSE rc.cceilingactual END ceilingamt,
 	rc.dadminpercent 			mgntfee	,
 	rc.dSharePercent			prorata,
 	rc.dgrossuppercent			grossup,
@@ -128,7 +129,10 @@ Declare @EndDt date = dateadd(dd,-1,dateadd(mm,1,@YearEnd))
 DECLARE @BegDt date = dateadd(dd,1,dateadd(yy,-1,@EndDt))
 DECLARE @Diff numeric(10,4) = datediff(day,@BegDt, @EndDt) + 1
 
-
+SELECT B.ord, b.phmy, b.pcode, b.PropertyDesc, b.thmy, b.tscode, b.ExpPoolID, b.ExpPoolCode, b.ExpDesc, b.ChartID, b.hAcct, b.AcctCode, b.aDesc
+	, SUM(b.TotExp) as TotExp, SUM(b.ExpOp) as ExpOp, SUM(b.GrossUp) as GrossUp, sum(B.RecoveryFactor) as RecoveryFactor, Sum(b.PartialYear) as PartialYear
+FROM
+(
 select a.*
 from 
 (Select   '1' ord, p.hmy                 			        phmy  
@@ -143,7 +147,9 @@ from
 	,convert(nvarchar(100),a.hmy)				hAcct
 	,ltrim(rtrim(a.scode)) 			        	AcctCode  
 	,ltrim(rtrim(a.sdesc)) 			        	adesc 
-  ,isnull(sum(case tot.thmy when 0 then isnull(tot.exp,0) else case tot.thmy when t.hmyperson then isnull(tot.exp,0) else 0 end end ) ,0) 		TotExp  
+  	/*,isnull(sum(case tot.thmy when 0 then isnull(tot.exp,0) else case tot.thmy when t.hmyperson then isnull(tot.exp,0) else 0 end end ) ,0) TotExp */
+  	/* Modified to include partial-year factor */
+	,ROUND(recgroup.factor * isnull(sum(case tot.thmy when 0 then isnull(tot.exp,0) else case tot.thmy when t.hmyperson then isnull(tot.exp,0) else 0 end end ) ,0),2) TotExp
 	,0 ExpOp
 	,0 GrossUp
 	,0 RecoveryFactor
@@ -156,31 +162,44 @@ from
 	Inner join CommExpensePoolAccts cepa on cepa.hExpensepool = cep.hMy   
 	Inner join acct a                    on cepa.hAcct = a.hMy  
 	Inner join(
-							Select distinct p.hmy       phmy  
-							,rc.hTenant	 thmy
-							,rc.hExpensePool 						ExpPoolId
-							,recgp.hmy      RecGrpID       /* Added 2/28/24 */
-      							,recgp.scode    RecGrpCode     /* Added 2/28/24 */
-							From property p
-							inner join tenant t 		     on t.hproperty = p.hmy
-							Inner join commRecoveryCalc rc on  p.hMy = rc.hProperty AND rc.bcalcestimate = 0 and isNull(rc.iCalculationType,1) = 1 AND rc.hTenant = t.hMyPerson
-							inner join commrecoverygroup recgp on (recgp.hmy = rc.hrecoverygroup)
-							/* ADDED 2/28/24 */
-							inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
-							inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
-							/* ADDED 06/04/24  and ca.iStatus = 1 */
-                      						AND ((ISNULL(ca.dtStart,'2000-01-01') <= @EndDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
-								OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
-								OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
-							Where 1=1
-							#Condition2#
-							#Condition3#
-							#Condition5#
-						) Recgroup on Recgroup.thmy = t.hMyPerson and Recgroup.ExpPoolId = cp.hExpensePool  
+			SELECT *, CONVERT(Numeric(10,8),AmendmentDays / @Diff) as Factor 
+			FROM (
+			Select distinct p.hmy       phmy  
+			,rc.hTenant	 thmy
+			,rc.hExpensePool 						ExpPoolId
+			,recgp.hmy      RecGrpID       /* Added 2/28/24 */
+			,recgp.scode    RecGrpCode     /* Added 2/28/24 */
+                        /* Added Amendment Details 6/25/24  */
+			,ca.hmy as hAmendment
+                        ,ca.dtstart
+                        ,ca.dtend
+                        , CASE WHEN ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt
+                                  THEN DATEDIFF(d,@BegDt,ca.dtEnd) + 1 
+                               WHEN ISNULL(ca.dtStart,'1910-01-01') > @BegDt and ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt   
+                               	  THEN DATEDIFF(d,ca.dtStart,@EndDt) + 1
+                                  ELSE @Diff END as AmendmentDays
+			
+			From property p
+			inner join tenant t 		     on t.hproperty = p.hmy
+			Inner join commRecoveryCalc rc on  p.hMy = rc.hProperty AND rc.bcalcestimate = 0 and isNull(rc.iCalculationType,1) = 1 AND rc.hTenant = t.hMyPerson
+			inner join commrecoverygroup recgp on (recgp.hmy = rc.hrecoverygroup)
+			/* ADDED 2/28/24 */
+			inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
+			inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
+			/* ADDED 06/04/24  and ca.iStatus = 1 */
+				AND ((ISNULL(ca.dtStart,'1910-01-01') <= @EndDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
+				OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
+				OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
+			Where 1=1
+			#Condition2#
+			#Condition3#
+			#Condition5#
+			) XX
+		) Recgroup on Recgroup.thmy = t.hMyPerson and Recgroup.ExpPoolId = cp.hExpensePool  
 	Left outer join ( 
 			 Select  
 			  p.hmy 		   	        phmy  
-			  ,0										thmy				
+			  ,0					thmy				
 	                  ,0                      		exphmy 
 			 ,t.hacct	   	  	        accthmy  	   	        
 			 ,isnull(t.smtd,0)           		exp  	   	        
@@ -218,13 +237,14 @@ from
 		inner join commamendments ca on cr.htenant = ca.htenant and cr.hamendment = ca.hmy 
 		/* Block below 06/04/24 */ 
 		and ca.isequence = (select max(ccc.isequence) from commamendments ccc where ca.htenant = ccc.htenant and ccc.istatus in (1,2)
-                        AND ((ISNULL(ccc.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @EndDt)
-			OR (ISNULL(ccc.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @BegDt)
-    			OR (ISNULL(ccc.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') <= @EndDt)))  
+                        AND ccc.iType in (0,1)  /* Added 6/26/24 to only include lease duration events */
+			AND ((ISNULL(ccc.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @EndDt)
+			OR (ISNULL(ccc.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') >= @BegDt)
+    			OR (ISNULL(ccc.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ccc.dtEnd,'2199-12-31') <= @EndDt)))  
 		/* Block above 06/04/24 */ 
-			AND ((ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
-			OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
-    			OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
+			AND ((ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
+			OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
+    			OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 		inner join commrecoverygroup crg on cr.hRecoveryGroup = crg.hmy
 		/* where cr.htenant = 14693 and cr.hExpensePool in (1188,1206) and cr.hRecoveryGroup in (3,4) */
 	) AcctExc on acctexc.RecExpID = recgroup.RecGrpID * 1000000 + cep.hmy and acctexc.htenant = t.hmyperson and acctexc.hacct = a.hmy
@@ -242,12 +262,12 @@ from
 	and not exists ( select 1 from commrecoveryexclude re inner join camrule cr  on cr.hmy = re.hCamrule 
 		inner join commamendments ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hmy
 			/* ADDED 06/04/24  and ca.iStatus = 1 */
-                	AND ((ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
-			OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
-			OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
+                	AND ((ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt)
+			OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
+			OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 		where re.hacct = a.hmy and re.hpropexpensepool = cep.hmy and cr.htenant = t.hmyperson) 
 	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,a.hchart,a.hmy,a.scode,a.sdesc
-	
+		,recgroup.hAmendment, recgroup.factor
 	union all
 	
 Select   '2' ord, p.hmy                 		        phmy  
@@ -312,10 +332,10 @@ Select   '2' ord, p.hmy                 		        phmy
 					/*and cr.dtfrom <= @EndDt and cr.dtto >= @EndDt*/
 				INNER JOIN commamendments ca on rc.htenant = ca.htenant and cr.hamendment = ca.hmy
 				/* ADDED 06/04/24  and ca.iStatus = 1 */
-				AND ((ISNULL(ca.dtStart,'2000-01-01') <= @EndDt 
+				AND ((ISNULL(ca.dtStart,'1910-01-01') <= @EndDt 
               				AND ISNULL(ca.dtEnd,'2199-12-31') >= @EndDt) 
-					OR (ISNULL(ca.dtStart,'2000-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt) 
-            				OR (ISNULL(ca.dtStart,'2000-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt)) 
+					OR (ISNULL(ca.dtStart,'1910-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt) 
+            				OR (ISNULL(ca.dtStart,'1910-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt)) 
 			where 1=1   
 			#Condition1#
 			#Condition2#
@@ -331,7 +351,9 @@ Select   '2' ord, p.hmy                 		        phmy
 	and exists ( select 1 from camrule cr where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
 	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,AdjTotal.ExpOp, AdjTotal.GrossUp, AdjTotal.RecoveryFactor, t.dtleasefrom , t.dtleaseto
 )a
-order by a.ord
+)b
+GROUP BY B.ord, b.phmy, b.pcode, b.PropertyDesc, b.thmy, b.tscode, b.ExpPoolID, b.ExpPoolCode, b.ExpDesc, b.ChartID, b.hAcct, b.AcctCode, b.aDesc
+order by b.ord
 //end select
 
 //Columns
