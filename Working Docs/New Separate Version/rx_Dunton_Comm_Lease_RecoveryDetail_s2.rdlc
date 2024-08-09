@@ -895,9 +895,6 @@
                   <KeepTogether>true</KeepTogether>
                 </TablixMember>
               </TablixMembers>
-              <Visibility>
-                <Hidden>=RunningValue(Fields!ExpOp.Value,SUM,"table1_Group1")=0</Hidden>
-              </Visibility>
             </TablixMember>
             <TablixMember>
               <KeepWithGroup>Before</KeepWithGroup>

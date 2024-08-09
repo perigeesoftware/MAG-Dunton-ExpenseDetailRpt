@@ -172,6 +172,7 @@ from
 								OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
 								OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 							Where 1=1
+							and cr.bExcludeRecovery <> -1   /*ADDED 8-7-2024*/
 							#Condition2#
 							#Condition3#
 							#Condition5#
@@ -284,6 +285,7 @@ Select   '2' ord, p.hmy                 			        phmy
 								OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt)
 								OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt))
 		Where 1=1
+		and cr.bExcludeRecovery <> -1   /*ADDED 8-7-2024*/		
 		#Condition2#
 		#Condition3#
 		#Condition5#
@@ -312,6 +314,7 @@ Select   '2' ord, p.hmy                 			        phmy
 					OR (ISNULL(ca.dtStart,'1901-01-01') <= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') >= @BegDt) 
             				OR (ISNULL(ca.dtStart,'1901-01-01') >= @BegDt AND ISNULL(ca.dtEnd,'2199-12-31') <= @EndDt)) 
 			where 1=1   
+			and cr.bExcludeRecovery <> -1   /*ADDED 8-7-2024*/
 			#Condition1#
 			#Condition2#
 			and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))

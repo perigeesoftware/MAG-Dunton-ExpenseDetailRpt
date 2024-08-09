@@ -188,7 +188,7 @@ FROM (
 WHERE x.AmendmentDays > 0
 
 
-select c.*, tsf.TotSqFt, 0 as UnitCount
+select c.*, tsf.TotSqFt
 	, convert(Numeric(10,8),c.dSqFt / tsf.TotSqFt) as SqFtFactor
 	
 INTO #CTE_AmendmentDetail 
@@ -206,17 +206,11 @@ WHERE c.iSequence = (select max(d.iSequence) from #CTE_Pool D
                       and c.dtLeaseTo = d.dtLeaseTo)
 and c.dSqFt <> 0
 
-UPDATE AD
-SET ad.UnitCount = c.UnitCount
-from #CTE_AmendmentDetail AD
-INNER JOIN (select tenantCode, count(distinct hunit) UnitCount  from #CTE_AmendmentDetail group by tenantcode) C
-	on ad.tenantcode = c.tenantcode
 
-
-SELECT hAmendment, hTenant, UnitCount, SUM(SqFtFactor) as SqFtFactor
+SELECT DISTINCT hAmendment, hTenant
 INTO #CTE_AmendmentList
 FROM #CTE_AmendmentDetail
-GROUP BY hAmendment, hTenant, UnitCount
+
 
 /*--- END BLOCK */
 
@@ -241,8 +235,7 @@ Select   '1' ord, p.hmy                 			        phmy
 	,ltrim(rtrim(a.sdesc)) 			        	adesc 
   	/*,isnull(sum(case tot.thmy when 0 then isnull(tot.exp,0) else case tot.thmy when t.hmyperson then isnull(tot.exp,0) else 0 end end ) ,0) TotExp */
   	/* Modified to include partial-year factor */
-	,ROUND(recgroup.Calcfactor * IIF(recgroup.UnitCount = 1,1,recgroup.SqFtFactor) 
-		* isnull(sum(case tot.thmy when 0 then isnull(tot.exp,0) else case tot.thmy when t.hmyperson then isnull(tot.exp,0) else 0 end end ) ,0),2) TotExp
+	,ROUND(recgroup.Calcfactor * recgroup.SqFtFactor * isnull(sum(case tot.thmy when 0 then isnull(tot.exp,0) else case tot.thmy when t.hmyperson then isnull(tot.exp,0) else 0 end end ) ,0),2) TotExp
 	,0 ExpOp
 	,0 GrossUp
 	,0 RecoveryFactor
@@ -267,7 +260,6 @@ Select   '1' ord, p.hmy                 			        phmy
                         ,ca.AmendmentDays
 			,ca.CalcFactor
 			,ca.SqFtFactor
-			,ca.UnitCount
 			From property p
 			inner join tenant t 		     on t.hproperty = p.hmy
 			Inner join commRecoveryCalc rc on  p.hMy = rc.hProperty AND rc.bcalcestimate = 0 and isNull(rc.iCalculationType,1) = 1 AND rc.hTenant = t.hMyPerson
@@ -276,7 +268,6 @@ Select   '1' ord, p.hmy                 			        phmy
 			inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
 			inner join #CTE_AmendmentDetail ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hamendment
 			Where 1=1
-			and cr.bExcludeRecovery <> -1   /* Added 8/7/24 */
 			#Condition2#
 			#Condition3#
 			#Condition5#
@@ -311,7 +302,6 @@ Select   '1' ord, p.hmy                 			        phmy
 			 where 1=1               
 			 #Condition1#
 			 and ce.dtadjustment between @BegDt and @EndDt
-			 and ce.sBooks = case '#books#' when 'cash' then 0 else 1 end  /* Added 07/23/24  */
 			) tot on tot.phmy = p.hmy and tot.accthmy = a.hmy and tot.exphmy = case tot.exphmy when 0 then tot.exphmy else cep.hmy end 
 
 	/* Added 02/28/24 */
@@ -340,7 +330,7 @@ Select   '1' ord, p.hmy                 			        phmy
 			inner join #CTE_AmendmentDetail ca  on cr.htenant = ca.htenant and cr.hamendment = ca.hamendment
 			where re.hacct = a.hmy and re.hpropexpensepool = cep.hmy and cr.htenant = t.hmyperson) 
 	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,a.hchart,a.hmy,a.scode,a.sdesc
-		,recgroup.hAmendment, recgroup.calcfactor, recgroup.SqFtFactor, recgroup.UnitCount
+		,recgroup.hAmendment, recgroup.calcfactor, recgroup.SqFtFactor
 	union all
 	
 Select   '2' ord, p.hmy                 		        phmy  
@@ -356,15 +346,9 @@ Select   '2' ord, p.hmy                 		        phmy
 	,'' 					        	AcctCode  
 	,''		 			        	adesc 
 	,0			                 		TotExp  
-
 	,ISNULL(AdjTotal.ExpOp,0)				ExpOp
 	,ISNULL(AdjTotal.GrossUp,0) 				GrossUp
 	,ISNULL(AdjTotal.RecoveryFactor,0)			RecoveryFactor
-/*
-	,ISNULL(AdjTotal.ExpOp,0) * IIF(adjtotal.UnitCount = 0,adjtotal.SqFtFactor,1)				ExpOp
-	,ISNULL(AdjTotal.GrossUp,0) * IIF(adjtotal.UnitCount = 0,adjtotal.SqFtFactor,1) 				GrossUp
-	,ISNULL(AdjTotal.RecoveryFactor,0) * IIF(adjtotal.UnitCount = 0,adjtotal.SqFtFactor,1)			RecoveryFactor
-*/
 	,case when (t.dtleasefrom > @BegDt and t.dtleasefrom  < @EndDt) or
 		    (t.dtleaseto > @BegDt and t.dtleaseto < @EndDt) 		    
 	      then 1 
@@ -387,7 +371,6 @@ Select   '2' ord, p.hmy                 		        phmy
 			and ((ISNULL(cr.dtfrom,'2199-12-31') <= @YearEnd and ISNULL(cr.dtto,'2199-12-31') >= @YearEnd)
 			or cr.dtto BETWEEN @BegDt and @YearEnd)
 		Where 1=1
-		and cr.bExcludeRecovery <> -1   /* Added 8/7/24 */		
 		#Condition2#
 		#Condition3#
 		#Condition5#
@@ -400,9 +383,7 @@ Select   '2' ord, p.hmy                 		        phmy
 				,isnull(rc.cexpensegrossup,0) 				GrossUp
 				,isnull(rc.cexpenserecoveryfactor,0)			RecoveryFactor
 				
-				,sum(isnull(rc.cExpenseNet,0))			ExpOp
-				, ca.UnitCount
-				/*, ca.SqFtFactor */
+				,sum(isnull(rc.cExpenseOperating,0))			ExpOp
 				from Property p  
 				inner join commpropconfig pc         on pc.hproperty = p.hmy
 				inner join tenant t 		     on t.hproperty = p.hmy
@@ -414,57 +395,12 @@ Select   '2' ord, p.hmy                 		        phmy
 					/*and cr.dtfrom <= @EndDt and cr.dtto >= @EndDt*/
 				INNER JOIN #CTE_AmendmentList ca on rc.htenant = ca.htenant and cr.hamendment = ca.hamendment
 				
-				where 1=1 
-				and cr.bExcludeRecovery <> -1   /* Added 8/7/24 */				
-				and ca.UnitCount <> 1  
-				#Condition1#
-				#Condition2#
-				and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))
+			where 1=1   
+			#Condition1#
+			#Condition2#			and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))
 				and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1,(@YearEnd))))
-				and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy,(@YearEnd))
-				group by p.hmy,t.scode,t.hmyperson,cep.hmy,rc.cexpensegrossup,rc.cexpenserecoveryfactor
-					,ca.UnitCount /*, ca.SqFtFactor */
-
-				UNION ALL
-
-				SELECT DISTINCT x.phmy, x.thmy, x.tscode, x.ExpPoolID, x.GrossUp, x.RecoveryFactor
-					, x.ExpOp as ExpOp
-                    		, x.UnitCount 
-                		FROM (
-            				Select p.hmy      phmy  
-					,t.hmyperson	  thmy
-					,isnull(t.scode,'') tscode
-					,cep.hmy 	ExpPoolId  
-					,isnull(rc.cexpensegrossup,0)       GrossUp
-					,isnull(rc.cexpenserecoveryfactor,0) RecoveryFactor
-					,sum(isnull(rc.cExpenseNet,0))  ExpOp
-					, 1 as UnitCount
-                    			/*--, 0 as SqFtFactor --ca.SqFtFactor*/
-					from Property p  
-					inner join commpropconfig pc         on pc.hproperty = p.hmy
-					inner join tenant t 		     on t.hproperty = p.hmy
-					Inner Join CommPropExpensePool cp    on cp.hProperty = p.hMy  
-					Inner Join CommExpensePool cep       on cep.hMy = cp.hExpensepool  
-					inner join commrecoverycalc rc ON rc.htenant = t.hmyperson AND rc.bcalcestimate = 0 and rc.hexpensepool=cep.hmy and isNull(rc.iCalculationType,1) = 1
-					/* ADDED 2/28/24 */
-					inner join camrule cr on rc.htenant = cr.htenant and rc.hcamrule = cr.hmy and rc.hexpensepool = cr.hexpensepool 
-						/*and cr.dtfrom <= @EndDt and cr.dtto >= @EndDt*/
-					INNER JOIN #CTE_AmendmentList ca on rc.htenant = ca.htenant and cr.hamendment = ca.hamendment
-				
-					where 1=1
-    		        		and ca.unitcount = 1
-					and cr.bExcludeRecovery <> -1   /* Added 8/7/24 */
-					#Condition1#
-					#Condition2#			
-      					and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))
-						and rc.dtCalcTo <= dateadd(dd,-1,(dateadd(mm,1,(@YearEnd))))
-					and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy,(@YearEnd))
-					group by p.hmy,t.scode,t.hmyperson,cep.hmy,rc.cexpensegrossup,rc.cexpenserecoveryfactor, rc.cBaseAmountActual
-					/*--, ca.SqFtFactor */
-            	) X
-           		INNER JOIN #CTE_AmendmentList caa
-            		on caa.htenant = x.thmy
-
+	and datepart(yyyy,rc.dtCalcTo) =  datepart(yyyy,(@YearEnd))
+			group by p.hmy,t.scode,t.hmyperson,cep.hmy,rc.cexpensegrossup,rc.cexpenserecoveryfactor
 		)AdjTotal on AdjTotal.phmy = p.hmy and AdjTotal.thmy = t.hmyperson and AdjTotal.exppoolid = cep.hmy
 	where 1=1   
 	#Condition1#
@@ -472,7 +408,6 @@ Select   '2' ord, p.hmy                 		        phmy
 	and case isnull(cp.iRecoveryEOYMonth,0) when 0 then pc.iRecoveryEOYMonth else cp.iRecoveryEOYMonth end = datepart(mm,(@YearEnd))
 	and exists ( select 1 from camrule cr where cr.hexpensepool = cep.hmy and cr.htenant = t.hmyperson)
 	group by p.hmy,p.scode,p.saddr1,t.scode,t.hmyperson,cep.hmy,cep.scode,cep.sdesc ,AdjTotal.ExpOp, AdjTotal.GrossUp, AdjTotal.RecoveryFactor, t.dtleasefrom , t.dtleaseto
-		,adjtotal.UnitCount /*, adjTotal.SqFtFactor*/
 )a
 )b
 GROUP BY B.ord, b.phmy, b.pcode, b.PropertyDesc, b.thmy, b.tscode, b.ExpPoolID, b.ExpPoolCode, b.ExpDesc, b.ChartID, b.hAcct, b.AcctCode, b.aDesc
